@@ -40,6 +40,8 @@ public sealed class JsonCleaner
 
     public byte[] Serialize(JsonNode root) => JsonSerializer.SerializeToUtf8Bytes(root, new JsonSerializerOptions { WriteIndented = true });
 
+    public void Validate(JsonNode root) => _ = GetInputs(root);
+
     private static JsonObject GetInputs(JsonNode root)
     {
         if (root is not JsonObject obj || obj["MixerConfiguration"] is not JsonObject mixer ||

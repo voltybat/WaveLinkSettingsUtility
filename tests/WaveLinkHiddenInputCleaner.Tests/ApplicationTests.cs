@@ -6,19 +6,11 @@ namespace WaveLinkHiddenInputCleaner.Tests;
 public class ApplicationTests
 {
     [Fact]
-    public void NoMatchDoesNotInspectProcessOrWrite()
+    public void NoMatchInspectsProcessButDoesNotWrite()
     {
         var files = new FakeFiles(Json(false)); var processes = new FakeProcesses();
         var result = App(files, processes).Run(new(null, true, false, false));
-        Assert.Equal(0, result); Assert.Equal(0, processes.FindCalls); Assert.Empty(files.Writes);
-    }
-
-    [Fact]
-    public void DryRunDoesNotInspectProcessOrWrite()
-    {
-        var files = new FakeFiles(Json(true)); var processes = new FakeProcesses();
-        var result = App(files, processes).Run(new(null, true, true, false));
-        Assert.Equal(0, result); Assert.Equal(0, processes.FindCalls); Assert.Empty(files.Writes);
+        Assert.Equal(0, result); Assert.Equal(1, processes.FindCalls); Assert.Empty(files.Writes);
     }
 
     [Fact]
@@ -40,12 +32,24 @@ public class ApplicationTests
     }
 
     [Fact]
+    public void RunningProcessIsStoppedBeforeFirstSettingsRead()
+    {
+        var process = new FakeProcess { Running = true, Graceful = true };
+        var files = new FakeFiles(Json(true), Json(true)) { ReadBlockedWhile = () => process.Running };
+
+        var result = App(files, new FakeProcesses(process)).Run(new(null, true, false, false));
+
+        Assert.Equal(0, result);
+        Assert.Single(files.Replacements);
+    }
+
+    [Fact]
     public void TimeoutForcesTreeAndNoRestartSuppressesActivation()
     {
         var files = new FakeFiles(Json(true), Json(true));
         var process = new FakeProcess { Running = true, Graceful = false };
         var activator = new FakeActivator();
-        var result = App(files, new FakeProcesses(process), activator).Run(new(null, true, false, true));
+        var result = App(files, new FakeProcesses(process), activator).Run(new(null, true, true));
         Assert.Equal(0, result); Assert.Equal(1, process.KillCalls); Assert.Equal(0, activator.Calls);
     }
 
@@ -100,8 +104,86 @@ public class ApplicationTests
         var files = new FakeFiles(Json(true), Json(true));
         var app = new CleanerApplication(new FakeDiscovery(), files, new FakeProcesses(), new FakeActivator(),
             new StringReader("yes\n"), new StringWriter(), () => new(2026, 1, 2));
-        Assert.Equal(0, app.Run(new(null, false, false, false, true)));
+        Assert.Equal(0, app.Run(new(null, false, false, true)));
         Assert.Single(files.Writes);
+    }
+
+    [Fact]
+    public void ManualBackupIsExactAndInspectsProcess()
+    {
+        using var temp = new TempSettings(Json(true));
+        var processes = new FakeProcesses();
+        var app = temp.App(processes, new FakeActivator(), new StringReader(""),
+            () => new(2026, 7, 18, 12, 34, 56, 789));
+
+        Assert.Equal(0, app.Run(new(null, false, false, false, Backup: true)));
+
+        Assert.Equal(1, processes.FindCalls);
+        Assert.Equal(temp.Original, File.ReadAllBytes(temp.Path + ".backup-20260718-123456789"));
+    }
+
+    [Fact]
+    public void ManualBackupStopsRunningProcessBeforeReadingAndRestartsIt()
+    {
+        var process = new FakeProcess { Running = true, Graceful = true };
+        var files = new FakeFiles(Json(true)) { ReadBlockedWhile = () => process.Running };
+        var activator = new FakeActivator();
+
+        var result = App(files, new FakeProcesses(process), activator)
+            .Run(new(null, false, false, false, Backup: true));
+
+        Assert.Equal(0, result);
+        Assert.Equal(1, process.CloseCalls);
+        Assert.Equal(1, activator.Calls);
+        Assert.Single(files.Writes);
+    }
+
+    [Fact]
+    public void RestoreReplacesMalformedCurrentAndPreservesItExactly()
+    {
+        using var temp = new TempSettings("{malformed"u8.ToArray());
+        var valid = Json(false);
+        var restore = temp.Path + ".backup-20260101-010101001";
+        File.WriteAllBytes(restore, valid);
+        var activator = new FakeActivator();
+        var app = temp.App(new FakeProcesses(), activator, new StringReader(""),
+            () => new(2026, 7, 18, 12, 34, 56, 789));
+
+        Assert.Equal(0, app.Run(new(null, false, false, false, RestorePath: restore)));
+
+        Assert.Equal(valid, File.ReadAllBytes(temp.Path));
+        Assert.Equal(temp.Original, File.ReadAllBytes(temp.Path + ".backup-20260718-123456789"));
+        Assert.Equal(1, activator.Calls);
+    }
+
+    [Fact]
+    public void RestoreRejectsArbitraryFileButStillAttemptsSingleRestart()
+    {
+        using var temp = new TempSettings(Json(true));
+        var arbitrary = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(temp.Path)!, "other.json");
+        File.WriteAllBytes(arbitrary, Json(false));
+        var activator = new FakeActivator();
+
+        Assert.Equal(1, temp.App(new FakeProcesses(), activator, new StringReader(""), () => DateTime.Now)
+            .Run(new(null, false, false, false, RestorePath: arbitrary)));
+        Assert.Equal(1, activator.Calls);
+        Assert.Equal(temp.Original, File.ReadAllBytes(temp.Path));
+    }
+
+    [Fact]
+    public void InteractiveMenuCanBackupEvenWhenThereAreNoHiddenEntries()
+    {
+        using var temp = new TempSettings(Json(false));
+        var output = new StringWriter();
+        var result = temp.App(new FakeProcesses(), new FakeActivator(), new StringReader("2\n"),
+            () => new(2026, 7, 18, 1, 2, 3, 4), output)
+            .Run(new(null, false, false, false, InteractiveMenu: true));
+
+        Assert.Equal(0, result);
+        Assert.True(File.Exists(temp.Path + ".backup-20260718-010203004"));
+        Assert.Contains("eight input channels", output.ToString());
+        Assert.Contains("1. Clean hidden inputs", output.ToString());
+        Assert.Contains("WARNING: Operations 1-3 will close Wave Link", output.ToString());
     }
 
     private static CleanerApplication App(FakeFiles files, FakeProcesses processes, FakeActivator? activator = null) =>
@@ -114,8 +196,14 @@ public class ApplicationTests
     private sealed class FakeFiles(params byte[][] reads) : IFileOperations
     {
         private readonly Queue<byte[]> reads = new(reads); public List<string> Writes { get; } = []; public List<string> Replacements { get; } = []; public bool ThrowOnWrite; public byte[]? LastWritten;
-        public byte[] ReadAllBytes(string path) => reads.Count > 1 ? reads.Dequeue() : reads.Peek();
+        public Func<bool>? ReadBlockedWhile;
+        public byte[] ReadAllBytes(string path)
+        {
+            if (ReadBlockedWhile?.Invoke() == true) throw new IOException("settings file is locked");
+            return reads.Count > 1 ? reads.Dequeue() : reads.Peek();
+        }
         public void WriteAllBytes(string path, byte[] bytes) { if (ThrowOnWrite) throw new IOException("test"); Writes.Add(path); LastWritten = bytes; }
+        public IEnumerable<string> EnumerateFiles(string directory, string pattern) => [];
         public void Replace(string source, string destination, string backup) => Replacements.Add(backup);
         public void Delete(string path) { }
     }
@@ -127,4 +215,32 @@ public class ApplicationTests
         public void KillTree() { KillCalls++; Running = false; }
     }
     private sealed class FakeActivator : IAppActivator { public int Calls; public void Activate(string _) => Calls++; }
+
+    private sealed class TempSettings : IDisposable
+    {
+        private readonly string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "wlhic-test-" + Guid.NewGuid().ToString("N"));
+        public string Path { get; }
+        public byte[] Original { get; }
+
+        public TempSettings(byte[] original)
+        {
+            Original = original;
+            var state = System.IO.Path.Combine(root, "LocalState");
+            Directory.CreateDirectory(state);
+            Path = System.IO.Path.Combine(state, "Settings.json");
+            File.WriteAllBytes(Path, original);
+        }
+
+        public CleanerApplication App(FakeProcesses processes, FakeActivator activator, TextReader input,
+            Func<DateTime> clock, TextWriter? output = null) =>
+            new(new LocationDiscovery(Path), new FileOperations(), processes, activator, input,
+                output ?? new StringWriter(), clock);
+
+        public void Dispose() => Directory.Delete(root, true);
+    }
+
+    private sealed class LocationDiscovery(string path) : ISettingsDiscovery
+    {
+        public SettingsLocation Discover(string? _) => new(path, "Elgato.WaveLink_test");
+    }
 }

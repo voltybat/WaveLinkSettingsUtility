@@ -9,6 +9,7 @@ public interface IFileOperations
 {
     byte[] ReadAllBytes(string path);
     void WriteAllBytes(string path, byte[] bytes);
+    IEnumerable<string> EnumerateFiles(string directory, string pattern);
     void Replace(string source, string destination, string backup);
     void Delete(string path);
 }
@@ -55,6 +56,7 @@ public sealed class FileOperations : IFileOperations
 {
     public byte[] ReadAllBytes(string path) => File.ReadAllBytes(path);
     public void WriteAllBytes(string path, byte[] bytes) => File.WriteAllBytes(path, bytes);
+    public IEnumerable<string> EnumerateFiles(string directory, string pattern) => Directory.EnumerateFiles(directory, pattern);
     public void Replace(string source, string destination, string backup) => File.Replace(source, destination, backup, true);
     public void Delete(string path) { if (File.Exists(path)) File.Delete(path); }
 }
