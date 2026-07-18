@@ -1,10 +1,10 @@
-using WaveLinkHiddenInputCleaner;
+using WaveLinkSettingsUtility;
 
-namespace WaveLinkHiddenInputCleaner.Tests;
+namespace WaveLinkSettingsUtility.Tests;
 
 public class DiscoveryTests : IDisposable
 {
-    private readonly string root = Path.Combine(Path.GetTempPath(), "wlhic-tests-" + Guid.NewGuid().ToString("N"));
+    private readonly string root = Path.Combine(Path.GetTempPath(), "wlsu-tests-" + Guid.NewGuid().ToString("N"));
     [Fact] public void MissingFails() => Assert.Throws<InvalidOperationException>(() => new SettingsDiscovery(root).Discover(null));
     [Fact]
     public void FindsPackageAndValidatesOverride()

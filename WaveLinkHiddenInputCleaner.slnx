@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="src/WaveLinkHiddenInputCleaner/WaveLinkHiddenInputCleaner.csproj" />
-  <Project Path="tests/WaveLinkHiddenInputCleaner.Tests/WaveLinkHiddenInputCleaner.Tests.csproj" />
-</Solution>

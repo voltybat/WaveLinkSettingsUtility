@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using WaveLinkHiddenInputCleaner;
+using WaveLinkSettingsUtility;
 
-namespace WaveLinkHiddenInputCleaner.Tests;
+namespace WaveLinkSettingsUtility.Tests;
 
 public class JsonCleanerTests
 {

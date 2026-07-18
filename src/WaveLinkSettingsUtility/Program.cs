@@ -1,5 +1,5 @@
 using System.Reflection;
-using WaveLinkHiddenInputCleaner;
+using WaveLinkSettingsUtility;
 
 var parsed = Parse(args);
 if (parsed.ExitCode is { } code) return code;
@@ -44,23 +44,27 @@ static (CleanerOptions? Options, int? ExitCode) Parse(string[] args)
         InteractiveMenu: args.Length == 0 || (!cleanupAction && !backup && restore is null)), null);
 }
 
-static void PrintHelp() => Console.WriteLine("""
-WaveLinkHiddenInputCleaner 1.3.0
-Wave Link supports eight input channels, and hidden entries still consume those slots.
-Remove stale entries to free slots, or unhide them to inspect the occupied slots.
+static void PrintHelp()
+{
+    var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+    Console.WriteLine($"""
+    WaveLinkSettingsUtility {version}
+    Wave Link supports eight input channels, and hidden entries still consume those slots.
+    Remove stale entries to free slots, or unhide them to inspect the occupied slots.
 
-Usage: WaveLinkHiddenInputCleaner.exe [options]
-  --yes                  Skip confirmation
-  --unhide               Keep matched entries and set the flag to false
-  --backup               Create an exact timestamped settings backup
-  --restore <path>       Restore a managed backup beside the selected Settings.json
-  --settings-path <path> Select Settings.json when discovery is ambiguous
-  --no-restart           Do not restart Wave Link if this tool stopped it
-  --help                  Show this help
-  --version               Show the build version
+    Usage: WaveLinkSettingsUtility.exe [options]
+      --yes                  Skip confirmation
+      --unhide               Keep matched entries and set the flag to false
+      --backup               Create an exact timestamped settings backup
+      --restore <path>       Restore a managed backup beside the selected Settings.json
+      --settings-path <path> Select Settings.json when discovery is ambiguous
+      --no-restart           Do not restart Wave Link if this tool stopped it
+      --help                  Show this help
+      --version               Show the build version
 
-Restore warning: backups from another Wave Link version may fail, be ignored, or
-cause Wave Link to reset its settings.
-Cleanup, effect transfer, backup, and restore close Wave Link if it is running so the settings file
-can be accessed safely. They restart it afterward unless --no-restart is used.
-""");
+    Restore warning: backups from another Wave Link version may fail, be ignored, or
+    cause Wave Link to reset its settings.
+    Cleanup, effect transfer, backup, and restore close Wave Link if it is running so the settings file
+    can be accessed safely. They restart it afterward unless --no-restart is used.
+    """);
+}

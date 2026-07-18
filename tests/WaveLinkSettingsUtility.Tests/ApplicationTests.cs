@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using WaveLinkHiddenInputCleaner;
+using WaveLinkSettingsUtility;
 
-namespace WaveLinkHiddenInputCleaner.Tests;
+namespace WaveLinkSettingsUtility.Tests;
 
 public class ApplicationTests
 {
@@ -66,7 +66,7 @@ public class ApplicationTests
     [Fact]
     public void RealReplacementCreatesIdenticalBackupAndParseableOutput()
     {
-        var root = Path.Combine(Path.GetTempPath(), "wlhic-app-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "wlsu-app-" + Guid.NewGuid().ToString("N"));
         var state = Path.Combine(root, "Packages", "Elgato.WaveLink_test", "LocalState");
         Directory.CreateDirectory(state);
         var path = Path.Combine(state, "Settings.json");
@@ -182,10 +182,26 @@ public class ApplicationTests
 
         Assert.Equal(0, result);
         Assert.True(File.Exists(temp.Path + ".backup-20260718-010203004"));
+        Assert.StartsWith("WaveLinkSettingsUtility 2.0.0", output.ToString());
         Assert.Contains("eight input channels", output.ToString());
         Assert.Contains("1. Clean hidden inputs", output.ToString());
         Assert.Contains("2. Transfer effects", output.ToString());
         Assert.Contains("WARNING: Operations 1-4 will close Wave Link", output.ToString());
+        Assert.Equal(2, output.ToString().Split("Choose an operation [1-5]:").Length - 1);
+    }
+
+    [Fact]
+    public void InteractiveMenuRunsMultipleOperationsUntilExit()
+    {
+        using var temp = new TempSettings(Json(false));
+        var output = new StringWriter();
+        var result = temp.App(new FakeProcesses(), new FakeActivator(), new StringReader("3\n3\n5\n"),
+            () => new(2026, 7, 18, 1, 2, 3, 4), output)
+            .Run(new(null, false, false, InteractiveMenu: true));
+
+        Assert.Equal(0, result);
+        Assert.Equal(3, output.ToString().Split("Choose an operation [1-5]:").Length - 1);
+        Assert.Contains("Exited.", output.ToString());
     }
 
     [Fact]
@@ -301,7 +317,7 @@ public class ApplicationTests
 
     private sealed class TempSettings : IDisposable
     {
-        private readonly string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "wlhic-test-" + Guid.NewGuid().ToString("N"));
+        private readonly string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "wlsu-test-" + Guid.NewGuid().ToString("N"));
         public string Path { get; }
         public byte[] Original { get; }
 

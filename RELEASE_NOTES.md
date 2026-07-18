@@ -1,9 +1,8 @@
-# v1.3.0
+# v2.0.0
 
-Wave Link channels that become unavailable can retain EQ and VST configuration that the interface no longer allows users to access. Version 1.3 adds a guided recovery workflow that transfers that stored effect chain to an already-created replacement channel.
+WaveLinkHiddenInputCleaner is now **Wave Link Settings Utility**, reflecting its broader cleanup, effect recovery, backup, and restore capabilities.
 
-- Added interactive effects transfer with explicit source and destination selection.
-- Copies only the ordered `AudioPluginConfigurations` effect chain; device identity, routing, application assignments, volume, and mute settings remain unchanged.
-- Displays stored effect names and warns before replacing an existing destination chain.
-- Creates an exact safety backup before atomically replacing settings.
-- Added detailed unavailable-channel recovery instructions to the README.
+- Renamed the repository, solution, projects, executable, namespaces, workflows, and release assets to `WaveLinkSettingsUtility`.
+- Displays the exact assembly version at the top of the interactive menu and through `--version`.
+- Returns to the main menu after each interactive operation instead of closing the utility.
+- Retains the existing settings cleanup, effect transfer, backup, and restore behavior.

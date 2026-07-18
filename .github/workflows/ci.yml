@@ -13,8 +13,8 @@ jobs:
       - run: dotnet restore
       - run: dotnet build -c Release --no-restore
       - run: dotnet test -c Release --no-build
-      - run: dotnet publish src/WaveLinkHiddenInputCleaner/WaveLinkHiddenInputCleaner.csproj -c Release -r win-x64 --self-contained true --no-build -o artifacts/publish
+      - run: dotnet publish src/WaveLinkSettingsUtility/WaveLinkSettingsUtility.csproj -c Release -r win-x64 --self-contained true --no-build -o artifacts/publish
       - uses: actions/upload-artifact@v4
         with:
-          name: WaveLinkHiddenInputCleaner-win-x64
-          path: artifacts/publish/WaveLinkHiddenInputCleaner.exe
+          name: WaveLinkSettingsUtility-win-x64
+          path: artifacts/publish/WaveLinkSettingsUtility.exe

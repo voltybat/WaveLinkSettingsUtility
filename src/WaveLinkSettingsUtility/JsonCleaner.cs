@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace WaveLinkHiddenInputCleaner;
+namespace WaveLinkSettingsUtility;
 
 public sealed class SettingsFormatException(string message, Exception? inner = null) : Exception(message, inner);
 

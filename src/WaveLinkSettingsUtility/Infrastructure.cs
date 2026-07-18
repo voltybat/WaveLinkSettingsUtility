@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace WaveLinkHiddenInputCleaner;
+namespace WaveLinkSettingsUtility;
 
 public sealed record SettingsLocation(string SettingsPath, string PackageFamilyName);
 

@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace WaveLinkHiddenInputCleaner;
+namespace WaveLinkSettingsUtility;
 
 public sealed record CleanerOptions(string? SettingsPath, bool Yes, bool NoRestart,
     bool Unhide = false, bool Backup = false, string? RestorePath = null, bool InteractiveMenu = false);
@@ -23,15 +23,29 @@ public sealed class CleanerApplication(
 
         if (options.InteractiveMenu)
         {
-            PrintIntroduction();
-            output.Write("Choose an operation [1-5]: ");
-            switch (input.ReadLine()?.Trim().ToLowerInvariant())
+            var failed = false;
+            while (true)
             {
-                case "1" or "clean" or "cleanup": return Clean(location, options);
-                case "2" or "transfer": return TransferEffects(location, options.NoRestart);
-                case "3" or "backup": return Backup(location, options.NoRestart);
-                case "4" or "restore": return ChooseAndRestore(location, options.NoRestart);
-                default: output.WriteLine("Exited without changes."); return 0;
+                PrintIntroduction();
+                output.Write("Choose an operation [1-5]: ");
+                var choice = input.ReadLine()?.Trim().ToLowerInvariant();
+                if (choice is null or "5" or "exit" or "quit")
+                {
+                    output.WriteLine("Exited.");
+                    return failed ? 1 : 0;
+                }
+
+                var result = choice switch
+                {
+                    "1" or "clean" or "cleanup" => Clean(location, options),
+                    "2" or "transfer" => TransferEffects(location, options.NoRestart),
+                    "3" or "backup" => Backup(location, options.NoRestart),
+                    "4" or "restore" => ChooseAndRestore(location, options.NoRestart),
+                    _ => -1
+                };
+                if (result < 0) output.WriteLine("Invalid selection. Choose a number from 1 to 5.");
+                else failed |= result != 0;
+                output.WriteLine();
             }
         }
         if (options.Backup) return Backup(location, options.NoRestart);
@@ -294,7 +308,9 @@ public sealed class CleanerApplication(
         return full;
     }
 
-    private void PrintIntroduction() => output.WriteLine("""
+    private void PrintIntroduction() => output.WriteLine($"""
+        WaveLinkSettingsUtility {typeof(CleanerApplication).Assembly.GetName().Version?.ToString(3)}
+
         Wave Link supports up to eight input channels. Hidden entries still consume those slots.
         Removing a stale entry frees its slot; unhiding keeps it visible for inspection.
 
