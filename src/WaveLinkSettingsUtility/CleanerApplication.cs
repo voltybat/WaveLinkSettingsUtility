@@ -4,13 +4,15 @@ using System.Text.RegularExpressions;
 namespace WaveLinkSettingsUtility;
 
 public sealed record CleanerOptions(string? SettingsPath, bool Yes, bool NoRestart,
-    bool Unhide = false, bool Backup = false, string? RestorePath = null, bool InteractiveMenu = false);
+    bool Unhide = false, bool Backup = false, string? RestorePath = null, bool InteractiveMenu = false,
+    bool DetectUnavailable = false, bool RepairUnavailable = false);
 
 internal enum CleanupAction { Remove, Unhide }
 
 public sealed class CleanerApplication(
     ISettingsDiscovery discovery, IFileOperations files, IProcessControl processes,
-    IAppActivator activator, TextReader input, TextWriter output, Func<DateTime> clock)
+    IAppActivator activator, TextReader input, TextWriter output, Func<DateTime> clock,
+    IAudioEndpointInspector? endpointInspector = null)
 {
     private readonly JsonCleaner json = new();
     private static readonly Regex BackupName = new("^Settings\\.json\\.backup-[0-9]{8}-[0-9]{9}$", RegexOptions.IgnoreCase);
@@ -27,9 +29,9 @@ public sealed class CleanerApplication(
             while (true)
             {
                 PrintIntroduction();
-                output.Write("Choose an operation [1-5]: ");
+                output.Write("Choose an operation [1-6]: ");
                 var choice = input.ReadLine()?.Trim().ToLowerInvariant();
-                if (choice is null or "5" or "exit" or "quit")
+                if (choice is null or "6" or "exit" or "quit")
                 {
                     output.WriteLine("Exited.");
                     return failed ? 1 : 0;
@@ -41,17 +43,110 @@ public sealed class CleanerApplication(
                     "2" or "transfer" => TransferEffects(location, options.NoRestart),
                     "3" or "backup" => Backup(location, options.NoRestart),
                     "4" or "restore" => ChooseAndRestore(location, options.NoRestart),
+                    "5" or "detect" or "repair" => DetectUnavailable(location, options.NoRestart, repair: true),
                     _ => -1
                 };
-                if (result < 0) output.WriteLine("Invalid selection. Choose a number from 1 to 5.");
+                if (result < 0) output.WriteLine("Invalid selection. Choose a number from 1 to 6.");
                 else failed |= result != 0;
                 output.WriteLine();
             }
         }
         if (options.Backup) return Backup(location, options.NoRestart);
         if (options.RestorePath is not null) return Restore(location, options.RestorePath, options.NoRestart);
+        if (options.DetectUnavailable || options.RepairUnavailable)
+            return DetectUnavailable(location, options.NoRestart, options.RepairUnavailable, options.Yes);
         return Clean(location, options);
     }
+
+    private int DetectUnavailable(SettingsLocation location, bool noRestart, bool repair = false, bool yes = false)
+    {
+        var process = processes.FindGuiProcess();
+        var stoppedByUs = false;
+        var failed = false;
+        try
+        {
+            if (process?.IsRunning == true)
+            {
+                stoppedByUs = true;
+                if (!process.CloseGracefully(TimeSpan.FromSeconds(10))) process.KillTree();
+                if (process.IsRunning) throw new InvalidOperationException("Wave Link is still running; endpoint detection could not read its settings.");
+            }
+            var root = ReadValid(location.SettingsPath);
+            var channels = json.GetHardwareChannels(root);
+            if (channels.Count == 0) { output.WriteLine("No hardware input channels were found."); return 0; }
+            var inspector = endpointInspector ?? new WindowsAudioEndpointInspector();
+            var activeEndpoints = inspector.GetActiveCaptureEndpoints();
+            output.WriteLine("Hardware input endpoint status:");
+            var unavailable = 0;
+            var repairs = new List<(HardwareChannel Channel, AudioEndpoint Endpoint)>();
+            foreach (var channel in channels)
+            {
+                var result = inspector.Inspect(channel.DeviceId);
+                if (result.State != AudioEndpointState.Active) unavailable++;
+                output.WriteLine($"  {ChannelLabel(channel)} - {StateLabel(result.State)}");
+                output.WriteLine($"    ID: {channel.DeviceId}");
+                if (!string.IsNullOrWhiteSpace(result.Detail)) output.WriteLine($"    {result.Detail}");
+                if (result.State != AudioEndpointState.Active)
+                {
+                    var suggestions = EndpointReplacementMatcher.Find(channel, activeEndpoints);
+                    if (suggestions.Count == 1)
+                    {
+                        var suggestion = suggestions[0];
+                        output.WriteLine($"    Suggested replacement: {suggestion.Endpoint.FriendlyName}");
+                        output.WriteLine($"    Replacement ID: {suggestion.Endpoint.Id}");
+                        output.WriteLine($"    Match: {(suggestion.ExactNameMatch ? "exact friendly name" : "friendly name after removing Windows' numeric device prefix")}");
+                        if (result.State is AudioEndpointState.Missing or AudioEndpointState.NotPresent)
+                            repairs.Add((channel, suggestion.Endpoint));
+                    }
+                    else if (suggestions.Count > 1)
+                    {
+                        output.WriteLine("    Possible replacements (ambiguous; choose manually):");
+                        foreach (var suggestion in suggestions)
+                            output.WriteLine($"      {suggestion.Endpoint.FriendlyName} - {suggestion.Endpoint.Id}");
+                    }
+                    else output.WriteLine("    No high-confidence active replacement was found.");
+                }
+            }
+            output.WriteLine(unavailable == 0
+                ? "All configured hardware input endpoints are active."
+                : $"Found {unavailable} hardware input endpoint{(unavailable == 1 ? "" : "s")} that {(unavailable == 1 ? "is" : "are")} not active.");
+            if (repair && repairs.Count > 0)
+            {
+                foreach (var candidate in repairs)
+                {
+                    var question = $"Relink {ChannelLabel(candidate.Channel)} to {candidate.Endpoint.FriendlyName} ({candidate.Endpoint.Id})?";
+                    if (!yes && !Confirm(question)) { output.WriteLine("Relink skipped."); continue; }
+                    var result = json.RelinkHardwareChannel(root, candidate.Channel.Key, candidate.Endpoint.Id);
+                    output.WriteLine($"Relink prepared; updated {result.UpdatedReferences} related reference{(result.UpdatedReferences == 1 ? "" : "s")}.");
+                }
+                ReplaceBytesSafely(location.SettingsPath, json.Serialize(root));
+                output.WriteLine("Endpoint relink completed.");
+            }
+            else if (repair && repairs.Count == 0) output.WriteLine("No safely repairable endpoint was found.");
+            return 0;
+        }
+        catch (Exception ex) { output.WriteLine($"Endpoint detection failed: {ex.Message}"); failed = true; }
+        finally
+        {
+            if (stoppedByUs && !noRestart)
+            {
+                try { activator.Activate(location.PackageFamilyName); output.WriteLine("Wave Link restarted."); }
+                catch (Exception ex) { output.WriteLine($"Restart failed: {ex.Message}"); failed = true; }
+            }
+        }
+        return failed ? 1 : 0;
+    }
+
+    private static string ChannelLabel(HardwareChannel channel) => $"{channel.InputName} ({channel.DeviceName})";
+    private static string StateLabel(AudioEndpointState state) => state switch
+    {
+        AudioEndpointState.Active => "active",
+        AudioEndpointState.Disabled => "disabled",
+        AudioEndpointState.NotPresent => "not present",
+        AudioEndpointState.Unplugged => "unplugged",
+        AudioEndpointState.Missing => "broken or stale ID",
+        _ => "unknown state"
+    };
 
     private int Backup(SettingsLocation location, bool noRestart)
     {
@@ -318,9 +413,10 @@ public sealed class CleanerApplication(
           2. Transfer effects    - Copy effects from an old channel to its replacement.
           3. Create backup       - Save an exact copy of the current settings.
           4. Restore backup      - Replace current settings with a previous backup.
-          5. Exit                - Close this tool without making changes.
+          5. Detect and repair   - Check stale hardware IDs and offer safe relinking.
+          6. Exit                - Close this tool without making changes.
 
-        WARNING: Operations 1-4 will close Wave Link if it is running so the settings file
+        WARNING: Operations 1-5 will close Wave Link if it is running so the settings file
         can be accessed safely. Wave Link will restart afterward unless --no-restart is used.
         """);
 

@@ -182,12 +182,13 @@ public class ApplicationTests
 
         Assert.Equal(0, result);
         Assert.True(File.Exists(temp.Path + ".backup-20260718-010203004"));
-        Assert.StartsWith("WaveLinkSettingsUtility 2.0.0", output.ToString());
+        Assert.StartsWith("WaveLinkSettingsUtility 2.1.0", output.ToString());
         Assert.Contains("eight input channels", output.ToString());
         Assert.Contains("1. Clean hidden inputs", output.ToString());
         Assert.Contains("2. Transfer effects", output.ToString());
-        Assert.Contains("WARNING: Operations 1-4 will close Wave Link", output.ToString());
-        Assert.Equal(2, output.ToString().Split("Choose an operation [1-5]:").Length - 1);
+        Assert.Contains("5. Detect and repair", output.ToString());
+        Assert.Contains("WARNING: Operations 1-5 will close Wave Link", output.ToString());
+        Assert.Equal(2, output.ToString().Split("Choose an operation [1-6]:").Length - 1);
     }
 
     [Fact]
@@ -195,13 +196,48 @@ public class ApplicationTests
     {
         using var temp = new TempSettings(Json(false));
         var output = new StringWriter();
-        var result = temp.App(new FakeProcesses(), new FakeActivator(), new StringReader("3\n3\n5\n"),
+        var result = temp.App(new FakeProcesses(), new FakeActivator(), new StringReader("3\n3\n6\n"),
             () => new(2026, 7, 18, 1, 2, 3, 4), output)
             .Run(new(null, false, false, InteractiveMenu: true));
 
         Assert.Equal(0, result);
-        Assert.Equal(3, output.ToString().Split("Choose an operation [1-5]:").Length - 1);
+        Assert.Equal(3, output.ToString().Split("Choose an operation [1-6]:").Length - 1);
         Assert.Contains("Exited.", output.ToString());
+    }
+
+    [Fact]
+    public void DetectionSuggestsUniqueExactActiveReplacementWithoutStoppingOrWriting()
+    {
+        var files = new FakeFiles(HardwareJson());
+        var processes = new FakeProcesses();
+        var output = new StringWriter();
+        var endpoints = new FakeEndpoints(new(AudioEndpointState.Missing),
+            [new("new-id", "Microphone (Shure MV7+)")]);
+        var app = new CleanerApplication(new FakeDiscovery(), files, processes, new FakeActivator(),
+            new StringReader(""), output, () => new(2026, 1, 2), endpoints);
+
+        Assert.Equal(0, app.Run(new(null, false, false, DetectUnavailable: true)));
+
+        Assert.Equal(1, processes.FindCalls);
+        Assert.Empty(files.Writes);
+        Assert.Contains("broken or stale ID", output.ToString());
+        Assert.Contains("Suggested replacement: Microphone (Shure MV7+)", output.ToString());
+        Assert.Contains("Replacement ID: new-id", output.ToString());
+        Assert.Contains("exact friendly name", output.ToString());
+    }
+
+    [Fact]
+    public void DetectionReportsMultipleMatchesAsAmbiguous()
+    {
+        var output = new StringWriter();
+        var endpoints = new FakeEndpoints(new(AudioEndpointState.NotPresent),
+            [new("new-a", "Microphone (Shure MV7+)"), new("new-b", "Microphone (Shure MV7+)")]);
+        var app = new CleanerApplication(new FakeDiscovery(), new FakeFiles(HardwareJson()), new FakeProcesses(),
+            new FakeActivator(), new StringReader(""), output, () => new(2026, 1, 2), endpoints);
+
+        Assert.Equal(0, app.Run(new(null, false, false, DetectUnavailable: true)));
+        Assert.Contains("Possible replacements (ambiguous; choose manually)", output.ToString());
+        Assert.DoesNotContain("Suggested replacement:", output.ToString());
     }
 
     [Fact]
@@ -290,6 +326,12 @@ public class ApplicationTests
             "AudioAppConfigurations":[{"Id":"new-app"}],"MasterVolume":0.8}
         }}}
         """);
+    private static byte[] HardwareJson() => Encoding.UTF8.GetBytes("""
+        {"MixerConfiguration":{"InputSettings":{
+          "old-id":{"InputName":"Microphone (Shure MV7+)","DeviceSettings":{"DeviceName":"Microphone","DeviceId":"old-id","DeviceType":"HardwareInputDevice"},"IsHiddenFromMixes":false},
+          "software":{"InputName":"System","DeviceSettings":{"DeviceName":"System","DeviceId":"software-id","DeviceType":"WaveSoftwareInputDevice"}}
+        }}}
+        """);
 
     private sealed class FakeDiscovery : ISettingsDiscovery { public SettingsLocation Discover(string? _) => new("C:\\pkg\\LocalState\\Settings.json", "Elgato.WaveLink_test"); }
     private sealed class FakeFiles(params byte[][] reads) : IFileOperations
@@ -314,6 +356,11 @@ public class ApplicationTests
         public void KillTree() { KillCalls++; Running = false; }
     }
     private sealed class FakeActivator : IAppActivator { public int Calls; public void Activate(string _) => Calls++; }
+    private sealed class FakeEndpoints(AudioEndpointResult result, IReadOnlyList<AudioEndpoint> endpoints) : IAudioEndpointInspector
+    {
+        public AudioEndpointResult Inspect(string _) => result;
+        public IReadOnlyList<AudioEndpoint> GetActiveCaptureEndpoints() => endpoints;
+    }
 
     private sealed class TempSettings : IDisposable
     {

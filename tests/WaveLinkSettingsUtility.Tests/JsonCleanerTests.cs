@@ -6,6 +6,41 @@ namespace WaveLinkSettingsUtility.Tests;
 
 public class JsonCleanerTests
 {
+    [Fact]
+    public void RelinkChangesIdentityAndStructuredReferencesButPreservesChannelSettings()
+    {
+        var cleaner = new JsonCleaner();
+        var root = cleaner.Parse("""{"Order":["old"],"Icons":{"old":"icon"},"MixerConfiguration":{"InputSettings":{"old":{"InputName":"Mic","DeviceSettings":{"DeviceId":"old","DeviceType":"HardwareInputDevice"},"AudioPluginConfigurations":[{"Id":"fx"}]}},"AudioPluginHostSettings":{"AutoScalePluginWindowState":{"old|fx":"Default"}}}}"""u8);
+
+        var result = cleaner.RelinkHardwareChannel(root, "old", "new");
+
+        Assert.True(result.UpdatedReferences >= 3);
+        Assert.Null(root["MixerConfiguration"]!["InputSettings"]!["old"]);
+        Assert.Equal("new", root["MixerConfiguration"]!["InputSettings"]!["new"]!["DeviceSettings"]!["DeviceId"]!.GetValue<string>());
+        Assert.Equal("fx", root["MixerConfiguration"]!["InputSettings"]!["new"]!["AudioPluginConfigurations"]![0]!["Id"]!.GetValue<string>());
+        Assert.Equal("new", root["Order"]![0]!.GetValue<string>());
+        Assert.Equal("Default", root["MixerConfiguration"]!["AudioPluginHostSettings"]!["AutoScalePluginWindowState"]!["new|fx"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void RelinkRejectsExistingReplacementChannel()
+    {
+        var cleaner = new JsonCleaner();
+        var root = cleaner.Parse("""{"MixerConfiguration":{"InputSettings":{"old":{"DeviceSettings":{"DeviceId":"old","DeviceType":"HardwareInputDevice"}},"new":{}}}}"""u8);
+        Assert.Throws<SettingsFormatException>(() => cleaner.RelinkHardwareChannel(root, "old", "new"));
+    }
+
+    [Fact]
+    public void RelinkCollapsesIdenticalHistoricalReferenceButRejectsConflict()
+    {
+        var cleaner = new JsonCleaner();
+        var identical = cleaner.Parse("""{"Icons":{"old":"icon","new":"icon"},"MixerConfiguration":{"InputSettings":{"channel":{"DeviceSettings":{"DeviceId":"old","DeviceType":"HardwareInputDevice"}}}}}"""u8);
+        cleaner.RelinkHardwareChannel(identical, "channel", "new");
+        Assert.Null(identical["Icons"]!["old"]);
+
+        var conflict = cleaner.Parse("""{"Icons":{"old":"old-icon","new":"new-icon"},"MixerConfiguration":{"InputSettings":{"channel":{"DeviceSettings":{"DeviceId":"old","DeviceType":"HardwareInputDevice"}}}}}"""u8);
+        Assert.Throws<SettingsFormatException>(() => cleaner.RelinkHardwareChannel(conflict, "channel", "new"));
+    }
     private readonly JsonCleaner cleaner = new();
 
     [Fact]
