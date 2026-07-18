@@ -24,12 +24,13 @@ public sealed class CleanerApplication(
         if (options.InteractiveMenu)
         {
             PrintIntroduction();
-            output.Write("Choose an operation [1-4]: ");
+            output.Write("Choose an operation [1-5]: ");
             switch (input.ReadLine()?.Trim().ToLowerInvariant())
             {
                 case "1" or "clean" or "cleanup": return Clean(location, options);
-                case "2" or "backup": return Backup(location, options.NoRestart);
-                case "3" or "restore": return ChooseAndRestore(location, options.NoRestart);
+                case "2" or "transfer": return TransferEffects(location, options.NoRestart);
+                case "3" or "backup": return Backup(location, options.NoRestart);
+                case "4" or "restore": return ChooseAndRestore(location, options.NoRestart);
                 default: output.WriteLine("Exited without changes."); return 0;
             }
         }
@@ -67,6 +68,84 @@ public sealed class CleanerApplication(
         }
         return failed ? 1 : 0;
     }
+
+    private int TransferEffects(SettingsLocation location, bool noRestart)
+    {
+        var process = processes.FindGuiProcess();
+        var stoppedByUs = false;
+        var failed = false;
+        try
+        {
+            if (process?.IsRunning == true)
+            {
+                stoppedByUs = true;
+                if (!process.CloseGracefully(TimeSpan.FromSeconds(10))) process.KillTree();
+                if (process.IsRunning) throw new InvalidOperationException("Wave Link is still running; settings were not changed.");
+            }
+            failed = RunEffectTransfer(location) != 0;
+        }
+        catch (Exception ex) { output.WriteLine($"Effect transfer failed: {ex.Message}"); failed = true; }
+        finally
+        {
+            if (stoppedByUs && !noRestart)
+            {
+                try { activator.Activate(location.PackageFamilyName); output.WriteLine("Wave Link restarted."); }
+                catch (Exception ex) { output.WriteLine($"Restart failed: {ex.Message}"); failed = true; }
+            }
+        }
+        return failed ? 1 : 0;
+    }
+
+    private int RunEffectTransfer(SettingsLocation location)
+    {
+        var root = ReadValid(location.SettingsPath);
+        var channels = json.GetEffectChannels(root);
+        var sources = channels.Where(channel => channel.EffectCount > 0).ToArray();
+        if (sources.Length == 0) { output.WriteLine("No Wave Link channels with stored effects were found."); return 0; }
+
+        output.WriteLine("Select the unavailable or old source channel:");
+        PrintChannels(sources);
+        var source = ChooseChannel(sources, "Select a source number, or press Enter to cancel: ");
+        if (source is null) { output.WriteLine("Effect transfer cancelled."); return 0; }
+
+        output.WriteLine($"Effects stored on {ChannelLabel(source)}:");
+        foreach (var name in source.EffectNames) output.WriteLine($"  {name}");
+
+        var targets = channels.Where(channel => !string.Equals(channel.Key, source.Key, StringComparison.Ordinal)).ToArray();
+        if (targets.Length == 0) { output.WriteLine("No other channel is available as a destination."); return 0; }
+        output.WriteLine("Select the new working destination channel:");
+        PrintChannels(targets);
+        var target = ChooseChannel(targets, "Select a destination number, or press Enter to cancel: ");
+        if (target is null) { output.WriteLine("Effect transfer cancelled."); return 0; }
+
+        var warning = $"Replace {target.EffectCount} destination effect{(target.EffectCount == 1 ? "" : "s")} on " +
+            $"{ChannelLabel(target)} with {source.EffectCount} effect{(source.EffectCount == 1 ? "" : "s")} from {ChannelLabel(source)}?";
+        if (!Confirm(warning)) { output.WriteLine("Effect transfer cancelled."); return 0; }
+
+        var result = json.TransferEffects(root, source.Key, target.Key);
+        ReplaceBytesSafely(location.SettingsPath, json.Serialize(root));
+        output.WriteLine($"Transferred {result.SourceEffectCount} effect{(result.SourceEffectCount == 1 ? "" : "s")} to {ChannelLabel(target)}, replacing {result.ReplacedEffectCount} existing effect{(result.ReplacedEffectCount == 1 ? "" : "s")}.");
+        return 0;
+    }
+
+    private void PrintChannels(IReadOnlyList<EffectChannel> channels)
+    {
+        for (var i = 0; i < channels.Count; i++)
+        {
+            var channel = channels[i];
+            output.WriteLine($"  {i + 1}. {ChannelLabel(channel)}{(channel.IsHidden ? " [hidden]" : "")} - " +
+                $"{channel.EffectCount} effect{(channel.EffectCount == 1 ? "" : "s")}");
+        }
+    }
+
+    private EffectChannel? ChooseChannel(IReadOnlyList<EffectChannel> channels, string prompt)
+    {
+        output.Write(prompt);
+        return int.TryParse(input.ReadLine()?.Trim(), out var choice) && choice >= 1 && choice <= channels.Count
+            ? channels[choice - 1] : null;
+    }
+
+    private static string ChannelLabel(EffectChannel channel) => $"{channel.InputName} ({channel.DeviceName})";
 
     private int ChooseAndRestore(SettingsLocation location, bool noRestart)
     {
@@ -220,11 +299,12 @@ public sealed class CleanerApplication(
         Removing a stale entry frees its slot; unhiding keeps it visible for inspection.
 
           1. Clean hidden inputs  - Remove stale entries or make them visible.
-          2. Create backup       - Save an exact copy of the current settings.
-          3. Restore backup      - Replace current settings with a previous backup.
-          4. Exit                - Close this tool without making changes.
+          2. Transfer effects    - Copy effects from an old channel to its replacement.
+          3. Create backup       - Save an exact copy of the current settings.
+          4. Restore backup      - Replace current settings with a previous backup.
+          5. Exit                - Close this tool without making changes.
 
-        WARNING: Operations 1-3 will close Wave Link if it is running so the settings file
+        WARNING: Operations 1-4 will close Wave Link if it is running so the settings file
         can be accessed safely. Wave Link will restart afterward unless --no-restart is used.
         """);
 

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using WaveLinkHiddenInputCleaner;
 
 namespace WaveLinkHiddenInputCleaner.Tests;
@@ -175,7 +176,7 @@ public class ApplicationTests
     {
         using var temp = new TempSettings(Json(false));
         var output = new StringWriter();
-        var result = temp.App(new FakeProcesses(), new FakeActivator(), new StringReader("2\n"),
+        var result = temp.App(new FakeProcesses(), new FakeActivator(), new StringReader("3\n"),
             () => new(2026, 7, 18, 1, 2, 3, 4), output)
             .Run(new(null, false, false, false, InteractiveMenu: true));
 
@@ -183,7 +184,79 @@ public class ApplicationTests
         Assert.True(File.Exists(temp.Path + ".backup-20260718-010203004"));
         Assert.Contains("eight input channels", output.ToString());
         Assert.Contains("1. Clean hidden inputs", output.ToString());
-        Assert.Contains("WARNING: Operations 1-3 will close Wave Link", output.ToString());
+        Assert.Contains("2. Transfer effects", output.ToString());
+        Assert.Contains("WARNING: Operations 1-4 will close Wave Link", output.ToString());
+    }
+
+    [Fact]
+    public void InteractiveEffectTransferCopiesOnlyEffectsAndReportsOverwrite()
+    {
+        var files = new FakeFiles(EffectJson());
+        var output = new StringWriter();
+        var result = new CleanerApplication(new FakeDiscovery(), files, new FakeProcesses(), new FakeActivator(),
+            new StringReader("2\n1\n1\ny\n"), output, () => new(2026, 1, 2, 3, 4, 5, 6))
+            .Run(new(null, false, false, InteractiveMenu: true));
+
+        Assert.Equal(0, result);
+        Assert.Single(files.Replacements);
+        var changed = new JsonCleaner().Parse(files.LastWritten!);
+        var inputs = changed["MixerConfiguration"]!["InputSettings"]!;
+        Assert.True(JsonNode.DeepEquals(inputs["old"]!["AudioPluginConfigurations"], inputs["new"]!["AudioPluginConfigurations"]));
+        Assert.Equal("new-device", inputs["new"]!["DeviceSettings"]!["DeviceId"]!.GetValue<string>());
+        Assert.Equal("new-app", inputs["new"]!["AudioAppConfigurations"]![0]!["Id"]!.GetValue<string>());
+        Assert.Equal(0.8, inputs["new"]!["MasterVolume"]!.GetValue<double>());
+        Assert.Contains("EQ", output.ToString());
+        Assert.Contains("replacing 1 existing effect", output.ToString());
+    }
+
+    [Fact]
+    public void EffectTransferStopsBeforeReadingAndRestartsAfterCancellation()
+    {
+        var process = new FakeProcess { Running = true, Graceful = true };
+        var files = new FakeFiles(EffectJson()) { ReadBlockedWhile = () => process.Running };
+        var activator = new FakeActivator();
+
+        var result = new CleanerApplication(new FakeDiscovery(), files, new FakeProcesses(process), activator,
+            new StringReader("2\n\n"), new StringWriter(), () => new(2026, 1, 2))
+            .Run(new(null, false, false, InteractiveMenu: true));
+
+        Assert.Equal(0, result);
+        Assert.Equal(1, process.CloseCalls);
+        Assert.Equal(1, activator.Calls);
+        Assert.Empty(files.Writes);
+    }
+
+    [Fact]
+    public void EffectTransferWithNoStoredEffectsDoesNotWrite()
+    {
+        var files = new FakeFiles(Encoding.UTF8.GetBytes("""
+            {"MixerConfiguration":{"InputSettings":{"one":{"InputName":"Mic","DeviceSettings":{"DeviceName":"Device"},"AudioPluginConfigurations":[]}}}}
+            """));
+        var output = new StringWriter();
+
+        var result = new CleanerApplication(new FakeDiscovery(), files, new FakeProcesses(), new FakeActivator(),
+            new StringReader("2\n"), output, () => new(2026, 1, 2))
+            .Run(new(null, false, false, InteractiveMenu: true));
+
+        Assert.Equal(0, result);
+        Assert.Empty(files.Writes);
+        Assert.Contains("No Wave Link channels with stored effects", output.ToString());
+    }
+
+    [Fact]
+    public void RealEffectTransferCreatesExactBackupAndParseableOutput()
+    {
+        var original = EffectJson();
+        using var temp = new TempSettings(original);
+        var app = temp.App(new FakeProcesses(), new FakeActivator(), new StringReader("2\n1\n1\ny\n"),
+            () => new(2026, 7, 18, 3, 4, 5, 6));
+
+        Assert.Equal(0, app.Run(new(null, false, false, InteractiveMenu: true)));
+
+        Assert.Equal(original, File.ReadAllBytes(temp.Path + ".backup-20260718-030405006"));
+        var changed = new JsonCleaner().Parse(File.ReadAllBytes(temp.Path));
+        var inputs = changed["MixerConfiguration"]!["InputSettings"]!;
+        Assert.True(JsonNode.DeepEquals(inputs["old"]!["AudioPluginConfigurations"], inputs["new"]!["AudioPluginConfigurations"]));
     }
 
     private static CleanerApplication App(FakeFiles files, FakeProcesses processes, FakeActivator? activator = null) =>
@@ -191,6 +264,16 @@ public class ApplicationTests
     private static byte[] Json(bool hidden) => Encoding.UTF8.GetBytes(
         "{\"MixerConfiguration\":{\"InputSettings\":{\"one\":{\"IsHiddenFromMixes\":VALUE}}}}"
             .Replace("VALUE", hidden ? "true" : "false"));
+    private static byte[] EffectJson() => Encoding.UTF8.GetBytes("""
+        {"MixerConfiguration":{"InputSettings":{
+          "old":{"InputName":"Main Mic","DeviceSettings":{"DeviceName":"Unavailable Mic","DeviceId":"old-device"},"IsHiddenFromMixes":false,
+            "AudioPluginConfigurations":[{"Name":"EQ","ParameterState":{"gain":7}},{"Name":"Gate","ParameterState":[1,2]}],
+            "AudioAppConfigurations":[{"Id":"old-app"}],"MasterVolume":0.2},
+          "new":{"InputName":"Main Mic New","DeviceSettings":{"DeviceName":"Working Mic","DeviceId":"new-device"},"IsHiddenFromMixes":false,
+            "AudioPluginConfigurations":[{"Name":"Marker"}],
+            "AudioAppConfigurations":[{"Id":"new-app"}],"MasterVolume":0.8}
+        }}}
+        """);
 
     private sealed class FakeDiscovery : ISettingsDiscovery { public SettingsLocation Discover(string? _) => new("C:\\pkg\\LocalState\\Settings.json", "Elgato.WaveLink_test"); }
     private sealed class FakeFiles(params byte[][] reads) : IFileOperations

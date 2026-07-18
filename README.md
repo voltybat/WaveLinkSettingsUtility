@@ -1,6 +1,6 @@
 # WaveLinkHiddenInputCleaner
 
-An unofficial Windows utility that safely removes—or makes visible—stale Wave Link input entries whose `IsHiddenFromMixes` value is the JSON boolean `true`.
+An unofficial Windows utility that safely cleans stale hidden Wave Link inputs, transfers effects from unavailable channels, and backs up or restores settings.
 
 ## The problem
 
@@ -8,7 +8,7 @@ Wave Link supports up to eight input channels. Sometimes an input remains in `Se
 
 The result is confusing: Wave Link may refuse to add another input even though fewer than eight channels appear in the interface. Because the entry is hidden, there is no visible channel to inspect or remove. Wave Link also locks its settings file while running, making safe manual diagnosis and editing awkward.
 
-This utility closes Wave Link, finds those hidden entries, and lets you either remove them to free their slots or unhide them for inspection. It creates a backup before replacing the settings file and restarts Wave Link afterward by default.
+This utility closes Wave Link, finds those hidden entries, and lets you either remove them to free their slots or unhide them for inspection. It can also recover the stored effect chain from an unavailable channel by copying it to a replacement channel. It creates a backup before replacing the settings file and restarts Wave Link afterward by default.
 
 WaveLinkHiddenInputCleaner is open source, MIT-licensed, and unaffiliated with Elgato. Version 1 supports Windows 11 x64 and the current packaged Wave Link settings format. It requires neither administrator access nor a separately installed .NET runtime.
 
@@ -37,11 +37,29 @@ Options:
 --version               Show the build version
 ```
 
-With no action option, interactive mode offers cleanup, backup, restore, or exit. Cleanup retains the remove/unhide/cancel submenu. `--unhide` can also be combined with `--yes` for unattended use.
+With no action option, interactive mode offers cleanup, effect transfer, backup, restore, or exit. Cleanup retains the remove/unhide/cancel submenu. `--unhide` can also be combined with `--yes` for unattended use. Effect transfer is interactive only.
 
-The utility discovers `%LOCALAPPDATA%\Packages\Elgato.WaveLink_*\LocalState\Settings.json`. An override must point to `Settings.json` in one of those discovered package directories. Cleanup, backup, and restore close the `Elgato.WaveLink` GUI when it is running so the settings file can be accessed safely, then restart it unless `--no-restart` is used. Wave Link and Elgato audio services remain running.
+The utility discovers `%LOCALAPPDATA%\Packages\Elgato.WaveLink_*\LocalState\Settings.json`. An override must point to `Settings.json` in one of those discovered package directories. Cleanup, effect transfer, backup, and restore close the `Elgato.WaveLink` GUI when it is running so the settings file can be accessed safely, then restart it unless `--no-restart` is used. Wave Link and Elgato audio services remain running.
 
 Exit code `0` means success, no work, or cancellation; `1` means an operational failure; `2` means invalid arguments.
+
+## Transfer effects from an unavailable channel
+
+If a microphone or other input becomes **Unavailable**, its EQ and VST settings may still be stored on the old channel even though Wave Link no longer lets you open them. To transfer that effect chain safely:
+
+1. Open Wave Link and create a new working channel for the affected microphone or device.
+2. Leave the unavailable channel in place. Do not delete it yet; it contains the stored effects.
+3. Start `WaveLinkHiddenInputCleaner.exe`. The utility will close Wave Link automatically when needed.
+4. Select **Transfer effects**.
+5. Select the unavailable or old channel as the source.
+6. Select the newly created working channel as the destination.
+7. Review the listed effects and the destination overwrite warning, then confirm.
+8. Let Wave Link restart and verify the effects on the replacement channel.
+9. Delete the unavailable channel only after confirming that the replacement works correctly.
+
+The destination's existing effect chain is replaced, not merged. Only `AudioPluginConfigurations`—the ordered EQ/VST/effect configuration—is copied. Device identity, application assignments, routing, volume, mute, and per-mix settings remain those of the replacement channel. The replacement channel must already exist, and the source must contain at least one stored effect.
+
+An exact backup is created automatically before the settings file is replaced. If the result is incorrect, use **Restore backup** from the main menu to return to the previous settings.
 
 ## Backups and restoration
 

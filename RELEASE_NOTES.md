@@ -1,10 +1,9 @@
-# v1.2.0
+# v1.3.0
 
-Wave Link supports up to eight input channels, and hidden entries still consume those slots. Stale hidden entries can therefore prevent new channels from being added even when fewer than eight are visible. Removing an entry frees its slot; unhiding keeps the entry and exposes its occupied slot for inspection.
+Wave Link channels that become unavailable can retain EQ and VST configuration that the interface no longer allows users to access. Version 1.3 adds a guided recovery workflow that transfers that stored effect chain to an already-created replacement channel.
 
-- Added an interactive top-level menu for cleanup, backup, restore, and exit.
-- Added `--backup` and `--restore <backup-path>` automation options.
-- Cleanup, backup, and restore close Wave Link when it is running so the settings file can be accessed safely, then restart it by default.
-- Manual backups preserve the exact settings bytes.
-- Restore accepts only managed backups for the selected package, validates them, preserves the current settings, atomically replaces the file, and safely controls only the Wave Link GUI.
-- Restore warns that settings backups from different Wave Link versions may be incompatible.
+- Added interactive effects transfer with explicit source and destination selection.
+- Copies only the ordered `AudioPluginConfigurations` effect chain; device identity, routing, application assignments, volume, and mute settings remain unchanged.
+- Displays stored effect names and warns before replacing an existing destination chain.
+- Creates an exact safety backup before atomically replacing settings.
+- Added detailed unavailable-channel recovery instructions to the README.

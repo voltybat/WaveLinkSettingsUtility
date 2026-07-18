@@ -45,7 +45,7 @@ static (CleanerOptions? Options, int? ExitCode) Parse(string[] args)
 }
 
 static void PrintHelp() => Console.WriteLine("""
-WaveLinkHiddenInputCleaner 1.2.0
+WaveLinkHiddenInputCleaner 1.3.0
 Wave Link supports eight input channels, and hidden entries still consume those slots.
 Remove stale entries to free slots, or unhide them to inspect the occupied slots.
 
@@ -61,6 +61,6 @@ Usage: WaveLinkHiddenInputCleaner.exe [options]
 
 Restore warning: backups from another Wave Link version may fail, be ignored, or
 cause Wave Link to reset its settings.
-Cleanup, backup, and restore close Wave Link if it is running so the settings file
+Cleanup, effect transfer, backup, and restore close Wave Link if it is running so the settings file
 can be accessed safely. They restart it afterward unless --no-restart is used.
 """);
