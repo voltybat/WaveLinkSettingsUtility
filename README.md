@@ -2,6 +2,18 @@
 
 An unofficial Windows utility that safely cleans stale hidden Wave Link inputs, transfers effects from unavailable channels, and backs up or restores settings.
 
+## What it can do
+
+- **Free occupied channel slots:** find inputs whose `IsHiddenFromMixes` value is the JSON boolean `true` and remove stale entries.
+- **Expose hidden inputs for inspection:** keep a hidden entry but set `IsHiddenFromMixes` to `false` so it becomes visible in Wave Link.
+- **Recover effects from unavailable channels:** copy the ordered EQ/VST effect chain from an old channel to an already-created replacement without copying device identity, routing, volume, mute, or application assignments.
+- **Create exact backups:** save a byte-for-byte timestamped copy of the current `Settings.json` without changing it.
+- **Restore safely:** validate and restore a managed backup while preserving the current settings as another exact backup.
+- **Protect every modification:** close only the Wave Link GUI when necessary, validate temporary output, create a safety backup, atomically replace the settings file, and restart Wave Link by default.
+- **Support guided and automated use:** use the returning interactive menu for every operation, or command-line options for cleanup, unhiding, backup, and restore.
+
+The utility automatically discovers the packaged Wave Link settings file, requires no administrator access or separate .NET installation, and performs no network access or telemetry.
+
 ## The problem
 
 Wave Link supports up to eight input channels. Sometimes an input remains in `Settings.json` with `IsHiddenFromMixes` set to `true` after it is no longer visible in the Wave Link interface. These stale hidden entries still occupy channel slots.
