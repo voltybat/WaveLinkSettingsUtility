@@ -1,0 +1,32 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test -c Release
+      - name: Publish and package
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          dotnet publish src/WaveLinkHiddenInputCleaner/WaveLinkHiddenInputCleaner.csproj -c Release -r win-x64 --self-contained true -p:Version=$($version.TrimStart('v')) -o artifacts/publish
+          $zip = "artifacts/WaveLinkHiddenInputCleaner-$version-win-x64.zip"
+          New-Item -ItemType Directory artifacts/package | Out-Null
+          Copy-Item artifacts/publish/WaveLinkHiddenInputCleaner.exe, README.md, LICENSE artifacts/package
+          Compress-Archive artifacts/package/* $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $zip -Leaf)" | Set-Content "$zip.sha256" -Encoding ascii
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.zip
+            artifacts/*.sha256
+          generate_release_notes: true

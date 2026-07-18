@@ -1,0 +1,20 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  build-test-publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore
+      - run: dotnet build -c Release --no-restore
+      - run: dotnet test -c Release --no-build
+      - run: dotnet publish src/WaveLinkHiddenInputCleaner/WaveLinkHiddenInputCleaner.csproj -c Release -r win-x64 --self-contained true --no-build -o artifacts/publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaveLinkHiddenInputCleaner-win-x64
+          path: artifacts/publish/WaveLinkHiddenInputCleaner.exe
