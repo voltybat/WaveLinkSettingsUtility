@@ -30,6 +30,14 @@ public sealed class JsonCleaner
         return keys.Length;
     }
 
+    public int Unhide(JsonNode root)
+    {
+        var inputs = GetInputs(root);
+        var entries = inputs.Where(p => IsHidden(p.Value)).Select(p => p.Value!.AsObject()).ToArray();
+        foreach (var entry in entries) entry["IsHiddenFromMixes"] = false;
+        return entries.Length;
+    }
+
     public byte[] Serialize(JsonNode root) => JsonSerializer.SerializeToUtf8Bytes(root, new JsonSerializerOptions { WriteIndented = true });
 
     private static JsonObject GetInputs(JsonNode root)

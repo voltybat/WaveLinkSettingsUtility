@@ -38,4 +38,16 @@ public class JsonCleanerTests
 
     [Fact]
     public void MalformedJsonFails() => Assert.Throws<SettingsFormatException>(() => cleaner.Parse("{"u8));
+
+    [Fact]
+    public void UnhideRetainsEntriesAndChangesOnlyExactMatches()
+    {
+        var root = cleaner.Parse("""{"MixerConfiguration":{"InputSettings":{"yes":{"IsHiddenFromMixes":true,"name":"kept"},"no":{"IsHiddenFromMixes":false},"text":{"IsHiddenFromMixes":"true"}}}}"""u8);
+        Assert.Equal(1, cleaner.Unhide(root));
+        var inputs = root["MixerConfiguration"]!["InputSettings"]!.AsObject();
+        Assert.Equal(["yes", "no", "text"], inputs.Select(x => x.Key));
+        Assert.False(inputs["yes"]!["IsHiddenFromMixes"]!.GetValue<bool>());
+        Assert.Equal("kept", inputs["yes"]!["name"]!.GetValue<string>());
+        Assert.Equal("true", inputs["text"]!["IsHiddenFromMixes"]!.GetValue<string>());
+    }
 }

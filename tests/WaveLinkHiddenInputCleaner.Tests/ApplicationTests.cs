@@ -79,6 +79,31 @@ public class ApplicationTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public void InteractiveUnhideRetainsEntryAndSetsFlagFalse()
+    {
+        var files = new FakeFiles(Json(true), Json(true));
+        var writer = new StringWriter();
+        var app = new CleanerApplication(new FakeDiscovery(), files, new FakeProcesses(), new FakeActivator(),
+            new StringReader("u\n"), writer, () => new(2026, 1, 2));
+        Assert.Equal(0, app.Run(new(null, false, false, false)));
+        Assert.Single(files.Writes);
+        var cleaner = new JsonCleaner();
+        var changed = cleaner.Parse(files.LastWritten!);
+        Assert.Empty(cleaner.Find(changed));
+        Assert.Contains("Made 1 hidden input entry visible", writer.ToString());
+    }
+
+    [Fact]
+    public void UnhideOptionCanBeConfirmedInteractively()
+    {
+        var files = new FakeFiles(Json(true), Json(true));
+        var app = new CleanerApplication(new FakeDiscovery(), files, new FakeProcesses(), new FakeActivator(),
+            new StringReader("yes\n"), new StringWriter(), () => new(2026, 1, 2));
+        Assert.Equal(0, app.Run(new(null, false, false, false, true)));
+        Assert.Single(files.Writes);
+    }
+
     private static CleanerApplication App(FakeFiles files, FakeProcesses processes, FakeActivator? activator = null) =>
         new(new FakeDiscovery(), files, processes, activator ?? new(), new StringReader("y\n"), new StringWriter(), () => new(2026, 1, 2, 3, 4, 5, 6));
     private static byte[] Json(bool hidden) => Encoding.UTF8.GetBytes(
@@ -88,9 +113,9 @@ public class ApplicationTests
     private sealed class FakeDiscovery : ISettingsDiscovery { public SettingsLocation Discover(string? _) => new("C:\\pkg\\LocalState\\Settings.json", "Elgato.WaveLink_test"); }
     private sealed class FakeFiles(params byte[][] reads) : IFileOperations
     {
-        private readonly Queue<byte[]> reads = new(reads); public List<string> Writes { get; } = []; public List<string> Replacements { get; } = []; public bool ThrowOnWrite;
+        private readonly Queue<byte[]> reads = new(reads); public List<string> Writes { get; } = []; public List<string> Replacements { get; } = []; public bool ThrowOnWrite; public byte[]? LastWritten;
         public byte[] ReadAllBytes(string path) => reads.Count > 1 ? reads.Dequeue() : reads.Peek();
-        public void WriteAllBytes(string path, byte[] bytes) { if (ThrowOnWrite) throw new IOException("test"); Writes.Add(path); }
+        public void WriteAllBytes(string path, byte[] bytes) { if (ThrowOnWrite) throw new IOException("test"); Writes.Add(path); LastWritten = bytes; }
         public void Replace(string source, string destination, string backup) => Replacements.Add(backup);
         public void Delete(string path) { }
     }

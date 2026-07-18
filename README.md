@@ -1,6 +1,6 @@
 # WaveLinkHiddenInputCleaner
 
-An unofficial Windows utility that safely removes stale Wave Link input entries whose `IsHiddenFromMixes` value is the JSON boolean `true`.
+An unofficial Windows utility that safely removes—or makes visible—stale Wave Link input entries whose `IsHiddenFromMixes` value is the JSON boolean `true`.
 
 WaveLinkHiddenInputCleaner is open source, MIT-licensed, and unaffiliated with Elgato. Version 1 supports Windows 11 x64 and the current packaged Wave Link settings format. It requires neither administrator access nor a separately installed .NET runtime.
 
@@ -12,6 +12,7 @@ Download the release ZIP, extract it, and either double-click `WaveLinkHiddenInp
 .\WaveLinkHiddenInputCleaner.exe
 .\WaveLinkHiddenInputCleaner.exe --dry-run
 .\WaveLinkHiddenInputCleaner.exe --yes
+.\WaveLinkHiddenInputCleaner.exe --unhide
 ```
 
 Options:
@@ -19,11 +20,14 @@ Options:
 ```text
 --yes                  Skip confirmation
 --dry-run              Report matches without stopping Wave Link or changing files
+--unhide               Keep matching entries and set IsHiddenFromMixes to false
 --settings-path <path> Select a settings file when multiple packages are found
 --no-restart           Leave Wave Link closed when this utility stopped it
 --help                  Show usage
 --version               Show the build version
 ```
+
+With no action option, interactive mode asks whether to remove the matching entries, unhide them, or cancel. `--unhide` can also be combined with `--yes` for unattended use.
 
 The utility discovers `%LOCALAPPDATA%\Packages\Elgato.WaveLink_*\LocalState\Settings.json`. An override must point to `Settings.json` in one of those discovered package directories. It only stops the `Elgato.WaveLink` GUI process; Wave Link and Elgato audio services remain running.
 
@@ -46,7 +50,7 @@ If no exact boolean match exists—or the matches disappear before the post-shut
 Initial releases are unsigned, so Microsoft SmartScreen may display a warning. Download only from this repository’s Releases page and verify the separate SHA-256 file:
 
 ```powershell
-Get-FileHash .\WaveLinkHiddenInputCleaner-v1.0.0-win-x64.zip -Algorithm SHA256
+Get-FileHash .\WaveLinkHiddenInputCleaner-v1.1.0-win-x64.zip -Algorithm SHA256
 ```
 
 Compare the displayed hash with the release `.sha256` file.

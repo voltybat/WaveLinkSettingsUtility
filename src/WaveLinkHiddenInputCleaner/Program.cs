@@ -10,7 +10,7 @@ return app.Run(parsed.Options!);
 
 static (CleanerOptions? Options, int? ExitCode) Parse(string[] args)
 {
-    string? path = null; var yes = false; var dry = false; var noRestart = false;
+    string? path = null; var yes = false; var dry = false; var noRestart = false; var unhide = false;
     for (var i = 0; i < args.Length; i++)
     {
         switch (args[i])
@@ -19,21 +19,23 @@ static (CleanerOptions? Options, int? ExitCode) Parse(string[] args)
             case "--version": Console.WriteLine(Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)); return (null, 0);
             case "--yes": yes = true; break;
             case "--dry-run": dry = true; break;
+            case "--unhide": unhide = true; break;
             case "--no-restart": noRestart = true; break;
             case "--settings-path" when i + 1 < args.Length: path = args[++i]; break;
             default: Console.Error.WriteLine($"Invalid argument: {args[i]}"); Console.Error.WriteLine("Use --help for usage."); return (null, 2);
         }
     }
-    return (new CleanerOptions(path, yes, dry, noRestart), null);
+    return (new CleanerOptions(path, yes, dry, noRestart, unhide), null);
 }
 
 static void PrintHelp() => Console.WriteLine("""
-WaveLinkHiddenInputCleaner 1.0.0
-Safely removes stale Wave Link inputs whose IsHiddenFromMixes value is true.
+WaveLinkHiddenInputCleaner 1.1.0
+Safely removes or unhides stale Wave Link inputs whose IsHiddenFromMixes value is true.
 
 Usage: WaveLinkHiddenInputCleaner.exe [options]
   --yes                  Skip confirmation
   --dry-run              Report matches without changing anything
+  --unhide               Keep matched entries and set the flag to false
   --settings-path <path> Select Settings.json when discovery is ambiguous
   --no-restart           Do not restart Wave Link if this tool stopped it
   --help                  Show this help
