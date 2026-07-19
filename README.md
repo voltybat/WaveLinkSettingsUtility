@@ -1,4 +1,4 @@
-# Wave Link Settings Utility
+# Wave Link 3 Settings Utility
 
 An unofficial Windows utility that safely detects and repairs unavailable hardware inputs, cleans stale hidden channels, transfers effects, and backs up or restores Wave Link settings.
 
